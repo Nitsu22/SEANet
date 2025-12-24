@@ -43,7 +43,6 @@ class trainer(nn.Module):
 		# MixIT: batchサイズ1前提で各話者出力を合計
 		B, time_start, nloss = 1, time.time(), 0
 		nloss_s_main, nloss_n_main = 0, 0
-		nloss_s_rest, nloss_n_rest = 0, 0
 		self.train()
 		scaler = GradScaler()
 		self.scheduler.step(args.epoch - 1)
@@ -134,17 +133,17 @@ class trainer(nn.Module):
 
 				# loss_n_main: 各話者ごとに計算（その話者以外の全話者のout_s[-B:,:]の合計と比較）
 				all_loss_n_main = []
-					for spk_idx, (out_s, out_n) in enumerate(all_speaker_outputs):
-						# その話者以外の全話者のout_s[-B:,:]を合計
-						other_speakers_sum = None
-						for other_idx, (other_out_s, _) in enumerate(all_speaker_outputs):
-							if other_idx != spk_idx:
-								if other_speakers_sum is None:
-									other_speakers_sum = other_out_s[-B:,:]  # [1, T]
-								else:
-									other_speakers_sum = other_speakers_sum + other_out_s[-B:,:]
+				for spk_idx, (out_s, out_n) in enumerate(all_speaker_outputs):
+					# その話者以外の全話者のout_s[-B:,:]を合計
+					other_speakers_sum = None
+					for other_idx, (other_out_s, _) in enumerate(all_speaker_outputs):
+						if other_idx != spk_idx:
+							if other_speakers_sum is None:
+								other_speakers_sum = other_out_s[-B:,:]  # [1, T]
+							else:
+								other_speakers_sum = other_speakers_sum + other_out_s[-B:,:]
 					
-					loss_n_main = self.loss_se.forward(out_n[-B:,:], other_speakers_sum.detach())
+					loss_n_main = self.loss_se.forward(out_n[-B:,:], other_speakers_sum)
 					# ========== DEBUG: nanチェック（後で削除する） ==========
 					if torch.isnan(loss_n_main) or torch.isinf(loss_n_main):
 						print(f"\nWARNING: loss_n_main is nan/inf at spk_idx={spk_idx}, loss_n_main={loss_n_main}")
@@ -164,60 +163,8 @@ class trainer(nn.Module):
 					loss_n_main_avg = sum(all_loss_n_main) / len(all_loss_n_main)
 				# ========== ここまで削除する ==========
 
-				# loss_s_rest: mixture1とmixture2ごとに補助反復で計算
-				# mixture1内の全話者のout_s[:-B,:]を合計
-				estim1_rest = None
-				for idx in mixture1_indices:
-					out_s, _ = all_speaker_outputs[idx]
-					if estim1_rest is None:
-						estim1_rest = out_s[:-B,:]  # [5, T] (B=1の場合)
-					else:
-						estim1_rest = estim1_rest + out_s[:-B,:]
-				
-				# mixture2内の全話者のout_s[:-B,:]を合計
-				estim2_rest = None
-				for idx in mixture2_indices:
-					out_s, _ = all_speaker_outputs[idx]
-					if estim2_rest is None:
-						estim2_rest = out_s[:-B,:]  # [5, T] (B=1の場合)
-					else:
-						estim2_rest = estim2_rest + out_s[:-B,:]
-
-				loss_s1_rest = self.loss_se.forward(estim1_rest, audio1.repeat(5, 1))
-				loss_s2_rest = self.loss_se.forward(estim2_rest, audio2.repeat(5, 1))
-				loss_s_rest_avg = (loss_s1_rest + loss_s2_rest) / 2.0
-
-				# loss_n_rest: 各話者ごとに補助反復で計算（その話者以外の全話者のout_s[:-B,:]の合計と比較）
-				all_loss_n_rest = []
-					for spk_idx, (out_s, out_n) in enumerate(all_speaker_outputs):
-						# その話者以外の全話者のout_s[:-B,:]を合計
-						other_speakers_rest_sum = None
-						for other_idx, (other_out_s, _) in enumerate(all_speaker_outputs):
-							if other_idx != spk_idx:
-								if other_speakers_rest_sum is None:
-									other_speakers_rest_sum = other_out_s[:-B,:]  # [5, T] (B=1の場合)
-								else:
-									other_speakers_rest_sum = other_speakers_rest_sum + other_out_s[:-B,:]
-					
-					loss_n_rest = self.loss_se.forward(out_n[:-B,:], other_speakers_rest_sum.detach())
-					# ========== DEBUG: nanチェック（後で削除する） ==========
-					if torch.isnan(loss_n_rest) or torch.isinf(loss_n_rest):
-						print(f"\nWARNING: loss_n_rest is nan/inf at spk_idx={spk_idx}, loss_n_rest={loss_n_rest}")
-						# nanの場合はスキップして続行
-						continue
-					# ========== ここまで削除する ==========
-					all_loss_n_rest.append(loss_n_rest)
-				
-				# ========== DEBUG: nanチェック（後で削除する） ==========
-				if len(all_loss_n_rest) == 0:
-					print("\nWARNING: all_loss_n_rest is empty, using zero tensor")
-					loss_n_rest_avg = torch.tensor(0.0).cuda()
-				else:
-					loss_n_rest_avg = sum(all_loss_n_rest) / len(all_loss_n_rest)
-				# ========== ここまで削除する ==========
-
 				# 最終損失
-				loss = loss_s_main_avg + (loss_n_main_avg + loss_n_rest_avg + loss_s_rest_avg) * args.alpha
+				loss = loss_s_main_avg + loss_n_main_avg * args.alpha
 
 			scaler.scale(loss).backward()
 			torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
@@ -227,75 +174,7 @@ class trainer(nn.Module):
 			nloss += loss.detach().cpu().numpy()
 			nloss_s_main += loss_s_main_avg.detach().cpu().numpy()
 			nloss_n_main += loss_n_main_avg.detach().cpu().numpy()
-			nloss_s_rest += loss_s_rest_avg.detach().cpu().numpy()
-			nloss_n_rest += loss_n_rest_avg.detach().cpu().numpy()
 			time_used = time.time() - time_start
-			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f, s_rest: %.3f, n_rest: %.3f)\r"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num, nloss_s_rest/num, nloss_n_rest/num))
+			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f)\r"%\
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num))
 			sys.stderr.flush()
-
-		sys.stdout.write("\n")
-		if hasattr(args, "score_file") and args.score_file is not None:
-			args.score_file.write(
-				"Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f, s_rest: %.3f, n_rest: %.3f)\r"%\
-				(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num, nloss_s_rest/num, nloss_n_rest/num)
-			)
-			args.score_file.flush()
-		return
-
-	def eval_network(self, eval_type, args):
-		Loader = args.valLoader   if eval_type == 'Val' else args.infLoader
-		B      = args.batch_size  if eval_type == 'Val' else 1
-		self.eval()
-		time_start = time.time()
-		for num, (audio, face, others) in enumerate(Loader, start = 1):
-			self.zero_grad()
-			with torch.no_grad():
-				audio, face = audio.cuda(), face.cuda()
-				audio_seg = 8
-				audio_len = audio.shape[1]
-				face_len = face.shape[1]
-				output_segments = []
-				for seg in range(audio_seg):
-					start_audio = seg * (audio_len // audio_seg)
-					start_face = seg * (face_len // audio_seg)
-					if seg < (audio_seg - 1):
-						end_audio = start_audio + (audio_len // audio_seg)
-						end_face = start_face + (face_len // audio_seg)
-					else:
-						end_audio = audio_len
-						end_face = face_len
-					if args.backbone == 'seanet':
-						out_speech, _ = self.model(audio[:, start_audio:end_audio],
-						                           face[:, start_face:end_face, :], B)
-						out = out_speech[-B:,:]
-
-					output_segments.append(out)
-				out_cat = torch.cat(output_segments, dim=1)
-
-			time_used = time.time() - time_start
-
-			audio_path = others['audio_path'][0]
-			scale = others['scale'][0]
-			out_wav_path = audio_path.replace('.wav', '_clean_ft.wav')
-			soundfile.write(out_wav_path, numpy.multiply(out_cat[0].cpu(), scale), 16000)
-		return
-
-	def save_parameters(self, path):
-		model = OrderedDict(list(self.state_dict().items()))
-		torch.save(model, path)
-
-	def load_parameters(self, path):
-		selfState = self.state_dict()
-		loadedState = torch.load(path)
-		for name, param in loadedState.items():
-			origName = name
-			if name not in selfState:
-				name = 'model.' + name
-				if name not in selfState:
-					print("%s is not in the model."%origName)
-					continue
-			if selfState[name].size() != loadedState[origName].size():
-				sys.stderr.write("Wrong parameter length: %s, model: %s, loaded: %s"%(origName, selfState[name].size(), loadedState[origName].size()))
-				continue
-			selfState[name].copy_(param)
