@@ -233,3 +233,23 @@ class trainer(nn.Module):
 			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f, s_rest: %.3f, n_rest: %.3f)\r"%\
 			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num, nloss_s_rest/num, nloss_n_rest/num))
 			sys.stderr.flush()
+
+
+	def save_parameters(self, path):
+		model = OrderedDict(list(self.state_dict().items()))
+		torch.save(model, path)
+
+	def load_parameters(self, path):
+		selfState = self.state_dict()
+		loadedState = torch.load(path)	
+		for name, param in loadedState.items():
+			origName = name
+			if name not in selfState:
+				name = 'model.' + name
+				if name not in selfState:
+					print("%s is not in the model."%origName)
+					continue
+			if selfState[name].size() != loadedState[origName].size():
+				sys.stderr.write("Wrong parameter length: %s, model: %s, loaded: %s"%(origName, selfState[name].size(), loadedState[origName].size()))
+				continue
+			selfState[name].copy_(param)
