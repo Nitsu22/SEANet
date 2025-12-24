@@ -43,6 +43,7 @@ class trainer(nn.Module):
 		# MixIT: batchサイズ1前提で各話者出力を合計
 		B, time_start, nloss = 1, time.time(), 0
 		nloss_s_main, nloss_n_main = 0, 0
+		nloss_s_rest, nloss_n_rest = 0, 0
 		self.train()
 		scaler = GradScaler()
 		self.scheduler.step(args.epoch - 1)
@@ -144,9 +145,24 @@ class trainer(nn.Module):
 								other_speakers_sum = other_speakers_sum + other_out_s[-B:,:]
 					
 					loss_n_main = self.loss_se.forward(out_n[-B:,:], other_speakers_sum)
+					# ========== DEBUG: nanチェック（後で削除する） ==========
+					if torch.isnan(loss_n_main) or torch.isinf(loss_n_main):
+						print(f"\nWARNING: loss_n_main is nan/inf at spk_idx={spk_idx}, loss_n_main={loss_n_main}")
+						print(f"  out_n shape: {out_n[-B:,:].shape}, other_speakers_sum shape: {other_speakers_sum.shape}")
+						print(f"  out_n stats: min={out_n[-B:,:].min()}, max={out_n[-B:,:].max()}, mean={out_n[-B:,:].mean()}")
+						print(f"  other_speakers_sum stats: min={other_speakers_sum.min()}, max={other_speakers_sum.max()}, mean={other_speakers_sum.mean()}")
+						# nanの場合はスキップして続行
+						continue
+					# ========== ここまで削除する ==========
 					all_loss_n_main.append(loss_n_main)
 				
-				loss_n_main_avg = sum(all_loss_n_main) / len(all_loss_n_main)
+				# ========== DEBUG: nanチェック（後で削除する） ==========
+				if len(all_loss_n_main) == 0:
+					print("\nWARNING: all_loss_n_main is empty, using zero tensor")
+					loss_n_main_avg = torch.tensor(0.0).cuda()
+				else:
+					loss_n_main_avg = sum(all_loss_n_main) / len(all_loss_n_main)
+				# ========== ここまで削除する ==========
 
 				# loss_s_rest: mixture1とmixture2ごとに補助反復で計算
 				# mixture1内の全話者のout_s[:-B,:]を合計
@@ -184,9 +200,21 @@ class trainer(nn.Module):
 								other_speakers_rest_sum = other_speakers_rest_sum + other_out_s[:-B,:]
 					
 					loss_n_rest = self.loss_se.forward(out_n[:-B,:], other_speakers_rest_sum)
+					# ========== DEBUG: nanチェック（後で削除する） ==========
+					if torch.isnan(loss_n_rest) or torch.isinf(loss_n_rest):
+						print(f"\nWARNING: loss_n_rest is nan/inf at spk_idx={spk_idx}, loss_n_rest={loss_n_rest}")
+						# nanの場合はスキップして続行
+						continue
+					# ========== ここまで削除する ==========
 					all_loss_n_rest.append(loss_n_rest)
 				
-				loss_n_rest_avg = sum(all_loss_n_rest) / len(all_loss_n_rest)
+				# ========== DEBUG: nanチェック（後で削除する） ==========
+				if len(all_loss_n_rest) == 0:
+					print("\nWARNING: all_loss_n_rest is empty, using zero tensor")
+					loss_n_rest_avg = torch.tensor(0.0).cuda()
+				else:
+					loss_n_rest_avg = sum(all_loss_n_rest) / len(all_loss_n_rest)
+				# ========== ここまで削除する ==========
 
 				# 最終損失
 				loss = loss_s_main_avg + (loss_n_main_avg + loss_n_rest_avg + loss_s_rest_avg) * args.alpha
@@ -199,7 +227,9 @@ class trainer(nn.Module):
 			nloss += loss.detach().cpu().numpy()
 			nloss_s_main += loss_s_main_avg.detach().cpu().numpy()
 			nloss_n_main += loss_n_main_avg.detach().cpu().numpy()
+			nloss_s_rest += loss_s_rest_avg.detach().cpu().numpy()
+			nloss_n_rest += loss_n_rest_avg.detach().cpu().numpy()
 			time_used = time.time() - time_start
-			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f)\r"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num))
+			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f, s_rest: %.3f, n_rest: %.3f)\r"%\
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num, nloss_s_rest/num, nloss_n_rest/num))
 			sys.stderr.flush()

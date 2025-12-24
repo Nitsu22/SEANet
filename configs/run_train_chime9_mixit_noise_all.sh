@@ -12,7 +12,7 @@ CUDA_VISIBLE_DEVICES=5 python ../main_chime9_mixit_noise_all.py \
 --batch_size 1 \
 --max_epoch 150 \
 --lr 0.00100 \
---alpha 1.0 \
+--alpha 0.10 \
 --val_step 3 \
 --lr_decay 0.97
 
