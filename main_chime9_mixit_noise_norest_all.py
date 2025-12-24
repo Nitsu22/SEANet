@@ -1,6 +1,6 @@
 import argparse, os
 from tools import *
-from trainer_chime9_mixit_noise import *
+from trainer_chime9_mixit_noise_norest import *
 from dataLoader_chime9_mixit_all import *
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"

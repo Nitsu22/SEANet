@@ -14,5 +14,6 @@ CUDA_VISIBLE_DEVICES=5 python ../main_chime9_mixit_noise_all.py \
 --lr 0.00100 \
 --alpha 0.10 \
 --val_step 3 \
---lr_decay 0.97
+--lr_decay 0.97 \
+--init_model /net/midgar/work/nitsu/work/chime9/SEANet/exps/seanet/model/model_0147.model
 
