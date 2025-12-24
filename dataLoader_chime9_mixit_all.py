@@ -1,5 +1,6 @@
 import numpy, os, random, soundfile, torch, json
 import re
+import itertools
 from collections import defaultdict
 
 def init_loader(args):
@@ -42,19 +43,11 @@ class train_loader(object):
 				session_id = session_match.group()
 				session_dict[session_id].append(path)
 		
-		# Shuffle sessions randomly
+		# Create all possible session pairs (56 * 55 / 2 = 1,540 pairs)
 		session_list = list(session_dict.keys())
-		random.shuffle(session_list)
-		
-		# Create pairs: each session with the next session
-		# TODO: Currently using first track (track_00) temporarily. Should be changed to random track selection in the future.
 		self.pair_list = []
-		for i in range(0, len(session_list) - 1, 2):
-			session1 = session_list[i]
-			session2 = session_list[i + 1]
-			
-			# Get first track (track_00) from each session
-			# Find track_00_lip.av.wav paths
+		for session1, session2 in itertools.combinations(session_list, 2):
+			# Get track_00_lip.av.wav paths from each session
 			session1_paths = [p for p in session_dict[session1] if 'track_00_lip.av.wav' in p]
 			session2_paths = [p for p in session_dict[session2] if 'track_00_lip.av.wav' in p]
 			
@@ -64,7 +57,7 @@ class train_loader(object):
 				path2 = random.choice(session2_paths)
 				self.pair_list.append((path1, path2))
 		
-		print(f"Created {len(self.pair_list)} pairs from {len(session_list)} sessions")
+		print(f"Created {len(self.pair_list)} pairs from {len(session_list)} sessions (all combinations)")
 
 	def __getitem__(self, index):         
 		# Get pair of paths

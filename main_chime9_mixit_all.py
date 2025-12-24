@@ -1,7 +1,7 @@
 import argparse, os
 from tools import *
 from trainer_chime9_mixit import *
-from dataLoader_chime9_mixit import *
+from dataLoader_chime9_mixit_all import *
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 parser = argparse.ArgumentParser(description = "Audio-visual target speaker extraction with MixIT.")

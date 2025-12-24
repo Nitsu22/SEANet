@@ -64,6 +64,12 @@ class trainer(nn.Module):
 					lip = lip.cuda()
 					if lip.dim() == 2:
 						lip = lip.unsqueeze(0)  # [1, F, C]
+					
+					# サイズチェック（フレーム数が0の場合はスキップ）
+					if lip.shape[1] == 0:
+						print(f'WARNING: Empty lip crop detected in mixture1, shape={lip.shape}, skipping...')
+						continue
+					
 					out_speech, _ = self.model(mixture_plus, lip, M = B)
 					mixture1_outputs.append(out_speech[-B:,:])  # [1, T]
 
@@ -72,6 +78,12 @@ class trainer(nn.Module):
 					lip = lip.cuda()
 					if lip.dim() == 2:
 						lip = lip.unsqueeze(0)
+					
+					# サイズチェック（フレーム数が0の場合はスキップ）
+					if lip.shape[1] == 0:
+						print(f'WARNING: Empty lip crop detected in mixture2, shape={lip.shape}, skipping...')
+						continue
+					
 					out_speech, _ = self.model(mixture_plus, lip, M = B)
 					mixture2_outputs.append(out_speech[-B:,:])
 
