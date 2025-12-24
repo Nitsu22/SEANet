@@ -13,7 +13,7 @@ parser.add_argument('--val_step',   type=int,   default=3,        help='Every [v
 parser.add_argument('--length',     type=float, default=4,        help='Training data length')
 parser.add_argument('--lr',         type=float, default=0.0010,   help='Init learning rate')
 parser.add_argument("--lr_decay",   type=float, default=0.97,     help='Learning rate decay every [val_step] epochs')
-parser.add_argument("--alpha",      type=float, default=1.0,       help='Weight for the loss (MixIT uses alpha=1.0)')
+parser.add_argument("--alpha",      type=float, default=0.10,       help='Weight for the loss (MixIT uses alpha=1.0)')
 parser.add_argument('--init_model', type=str,   default="",       help='Init model from pretrain')
 parser.add_argument('--save_path',  type=str,   default="",       help='Path to save the clean list')
 parser.add_argument('--data_list',  type=str,   default="",       help='The path of the training list (should contain central_crops paths)')
