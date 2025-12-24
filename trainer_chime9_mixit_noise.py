@@ -201,4 +201,5 @@ class trainer(nn.Module):
 			nloss_n_main += loss_n_main_avg.detach().cpu().numpy()
 			time_used = time.time() - time_start
 			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (s_main: %.3f, n_main: %.3f)\r"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss_s_main/num, nloss_n_main/num))
+			sys.stderr.flush()
