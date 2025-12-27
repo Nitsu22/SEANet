@@ -17,6 +17,10 @@ parser.add_argument('--session_id', type=str,   default="session_00", help='Sess
 parser.add_argument('--track',      type=str,   default="track_00", help='Track to use')
 parser.add_argument('--output_dir', type=str,   default="",       help='Output directory for separated audio files')
 parser.add_argument('--save_path',  type=str,   default="",       help='Path for save_path (used by init_system)')
+# trainer初期化に必要な引数を追加（推論時は使用されないが、初期化に必要）
+parser.add_argument('--lr',         type=float, default=0.0010,   help='Init learning rate (not used in inference)')
+parser.add_argument('--val_step',   type=int,   default=3,        help='Validation step (not used in inference)')
+parser.add_argument("--lr_decay",   type=float, default=0.97,     help='Learning rate decay (not used in inference)')
 
 args = init_system(parser.parse_args())
 
@@ -57,6 +61,10 @@ s.eval()
 B = args.batch_size
 import time
 time_start = time.time()
+
+# Store all separated audios for summing
+separated_audios = []
+separated_audio_dict = {}  # Store by speaker ID for reference
 
 for num, (audio, face, others) in enumerate(args.infLoader, start=1):
 	with torch.no_grad():
@@ -105,9 +113,73 @@ for num, (audio, face, others) in enumerate(args.infLoader, start=1):
 	output_audio = numpy.multiply(out_cat[0].cpu().numpy(), scale)
 	soundfile.write(output_path, output_audio, 16000)
 	
+	# Store for summing (keep as numpy array)
+	separated_audios.append(output_audio)
+	separated_audio_dict[spk_id] = output_audio
+	
 	time_used = time.time() - time_start
 	print(f"Processed {num}/{len(args.infLoader)}: {spk_id} -> {output_path} (time: {time_used:.2f}s)")
 
+# Sum all separated audios
+print("\nSumming all separated audios...")
+# Find minimum length to avoid dimension mismatch
+if len(separated_audios) > 0:
+	min_length = min([len(audio) for audio in separated_audios])
+	summed_audio = numpy.zeros(min_length, dtype=numpy.float32)
+	for audio in separated_audios:
+		summed_audio += audio[:min_length]
+	
+	# Also truncate mixture to same length for fair comparison
+	mixture_truncated = mixture_audio_original[:min_length]
+	
+	# Save summed audio
+	summed_output_path = os.path.join(args.output_dir, f"summed_{args.track}_separated.wav")
+	soundfile.write(summed_output_path, summed_audio, 16000)
+	print(f"Saved summed separated audio to: {summed_output_path}")
+	
+	# Calculate SI-SNR
+	print("\nCalculating SI-SNR metrics...")
+	
+	# Convert to torch tensors for SI-SNR calculation
+	# cal_SISNR expects [batch size, sequence length]
+	mixture_tensor = torch.FloatTensor(mixture_truncated).unsqueeze(0)  # [1, length]
+	summed_tensor = torch.FloatTensor(summed_audio).unsqueeze(0)  # [1, length]
+	
+	# SI-SNR between summed separated audio and original mixture
+	sisnr_summed = cal_SISNR(mixture_tensor, summed_tensor)
+	sisnr_summed_value = sisnr_summed.item()
+	
+	# Write results to results.txt
+	results_path = os.path.join(args.output_dir, "results.txt")
+	with open(results_path, 'w') as f:
+		f.write("=" * 60 + "\n")
+		f.write("SI-SNR Evaluation Results\n")
+		f.write("=" * 60 + "\n")
+		f.write(f"Session: {args.session_id}\n")
+		f.write(f"Track: {args.track}\n")
+		f.write(f"Number of speakers: {len(separated_audios)}\n")
+		f.write(f"Audio length: {min_length} samples ({min_length/16000:.2f} seconds)\n")
+		f.write("\n")
+		f.write("-" * 60 + "\n")
+		f.write("Metrics:\n")
+		f.write("-" * 60 + "\n")
+		f.write(f"SI-SNR (Summed Separated vs Original Mixture): {sisnr_summed_value:.4f} dB\n")
+		f.write("\n")
+		f.write("-" * 60 + "\n")
+		f.write("Output Files:\n")
+		f.write("-" * 60 + "\n")
+		f.write(f"Mixture (input): {os.path.basename(mixture_output_path)}\n")
+		f.write(f"Summed separated: {os.path.basename(summed_output_path)}\n")
+		for spk_id in sorted(separated_audio_dict.keys()):
+			f.write(f"{spk_id}: {spk_id}_{args.track}_separated.wav\n")
+	
+	print(f"\nResults saved to: {results_path}")
+	print(f"SI-SNR (Summed Separated vs Original Mixture): {sisnr_summed_value:.4f} dB")
+else:
+	print("\nWarning: No separated audios to sum!")
+
 print(f"\nInference completed! Output files saved to: {args.output_dir}")
 print(f"Mixture (input) audio saved to: {mixture_output_path}")
+if len(separated_audios) > 0:
+	print(f"Summed separated audio saved to: {summed_output_path}")
 

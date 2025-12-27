@@ -3,7 +3,7 @@
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 printf "seanet-CHIME9-MixIT-inference (session_00 all speakers) \n"
-CUDA_VISIBLE_DEVICES=5 python ../main_inf_chime9_mixit_all.py \
+CUDA_VISIBLE_DEVICES=0 python ../main_inf_chime9_mixit_all.py \
 --save_path exps/seanet_chime9_mixit_all \
 --data_list /net/midgar/work/nitsu/work/chime9/data/datalist_train \
 --backbone seanet \
