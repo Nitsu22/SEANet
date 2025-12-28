@@ -3,7 +3,7 @@ import numpy
 import soundfile
 from tools import *
 from trainer_chime9_mixit import *
-from dataLoader_chime9_mixit_all import *
+from dataLoader_chime9_mixit_inference import *
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 parser = argparse.ArgumentParser(description = "Audio-visual target speaker extraction inference for session 0 all speakers.")
@@ -62,16 +62,13 @@ B = args.batch_size
 import time
 time_start = time.time()
 
-# Store all separated audios for summing
 separated_audios = []
-separated_audio_dict = {}  # Store by speaker ID for reference
+separated_audio_dict = {}
 
 for num, (audio, face, others) in enumerate(args.infLoader, start=1):
 	with torch.no_grad():
 		audio, face = audio.cuda(), face.cuda()
 		
-		# Ensure correct dimensions
-		# audio: [batch, time], face: [batch, frames, features]
 		if audio.dim() == 1:
 			audio = audio.unsqueeze(0)
 		if face.dim() == 2:
@@ -101,19 +98,15 @@ for num, (audio, face, others) in enumerate(args.infLoader, start=1):
 		
 		out_cat = torch.cat(output_segments, dim=1)
 	
-	# Get speaker ID and save (handle list from DataLoader)
 	spk_id = others['spk_id'][0] if isinstance(others['spk_id'], list) else others['spk_id']
 	scale = others['scale'][0] if isinstance(others['scale'], list) else others['scale']
 	
-	# Save separated audio
 	output_filename = f"{spk_id}_{args.track}_separated.wav"
 	output_path = os.path.join(args.output_dir, output_filename)
 	
-	# Denormalize and save
 	output_audio = numpy.multiply(out_cat[0].cpu().numpy(), scale)
 	soundfile.write(output_path, output_audio, 16000)
 	
-	# Store for summing (keep as numpy array)
 	separated_audios.append(output_audio)
 	separated_audio_dict[spk_id] = output_audio
 	
@@ -122,34 +115,34 @@ for num, (audio, face, others) in enumerate(args.infLoader, start=1):
 
 # Sum all separated audios
 print("\nSumming all separated audios...")
-# Find minimum length to avoid dimension mismatch
 if len(separated_audios) > 0:
-	min_length = min([len(audio) for audio in separated_audios])
-	summed_audio = numpy.zeros(min_length, dtype=numpy.float32)
+	min_separated_length = min([len(audio) for audio in separated_audios])
+	mixture_length = len(mixture_audio_original)
+	min_length = min(min_separated_length, mixture_length)
+	
+	truncated_audios = []
 	for audio in separated_audios:
-		summed_audio += audio[:min_length]
+		if hasattr(audio, 'numpy'):
+			audio = audio.numpy()
+		elif hasattr(audio, 'cpu'):
+			audio = audio.cpu().numpy()
+		truncated_audios.append(numpy.asarray(audio, dtype=numpy.float32)[:min_length])
 	
-	# Also truncate mixture to same length for fair comparison
-	mixture_truncated = mixture_audio_original[:min_length]
+	summed_audio = numpy.sum(numpy.array(truncated_audios), axis=0)
+	mixture_truncated = numpy.asarray(mixture_audio_original[:min_length], dtype=numpy.float32)
 	
-	# Save summed audio
 	summed_output_path = os.path.join(args.output_dir, f"summed_{args.track}_separated.wav")
 	soundfile.write(summed_output_path, summed_audio, 16000)
 	print(f"Saved summed separated audio to: {summed_output_path}")
 	
-	# Calculate SI-SNR
 	print("\nCalculating SI-SNR metrics...")
 	
-	# Convert to torch tensors for SI-SNR calculation
-	# cal_SISNR expects [batch size, sequence length]
-	mixture_tensor = torch.FloatTensor(mixture_truncated).unsqueeze(0)  # [1, length]
-	summed_tensor = torch.FloatTensor(summed_audio).unsqueeze(0)  # [1, length]
+	mixture_tensor = torch.FloatTensor(mixture_truncated).unsqueeze(0)
+	summed_tensor = torch.FloatTensor(summed_audio).unsqueeze(0)
 	
-	# SI-SNR between summed separated audio and original mixture
 	sisnr_summed = cal_SISNR(mixture_tensor, summed_tensor)
 	sisnr_summed_value = sisnr_summed.item()
 	
-	# Write results to results.txt
 	results_path = os.path.join(args.output_dir, "results.txt")
 	with open(results_path, 'w') as f:
 		f.write("=" * 60 + "\n")
