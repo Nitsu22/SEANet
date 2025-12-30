@@ -9,8 +9,7 @@ from model.seanet import seanet
 from torch.cuda.amp import autocast, GradScaler
 from collections import OrderedDict
 import soundfile
-import numpy
-import random 
+import numpy 
 
 def init_trainer(args):
 	s = trainer(args)
@@ -42,18 +41,7 @@ class trainer(nn.Module):
 		
 	def train_network(self, args):
 		# MixIT: batchサイズ1前提で各話者出力を合計
-		B, time_start = 1, time.time()
-		nloss = 0  # 全体の損失
-		# Singleモードの損失
-		nloss_single = 0  # Singleモードの総損失
-		nloss_single_sisnr = 0  # SingleモードのSI-SNR損失
-		nloss_single_l2 = 0  # SingleモードのL2損失
-		# MoMモードの損失
-		nloss_mom = 0  # MoMモードの総損失
-		nloss_mom_sisnr1 = 0  # MoMモードのSI-SNR1損失
-		nloss_mom_sisnr2 = 0  # MoMモードのSI-SNR2損失
-		n_single = 0  # Singleモードのサンプル数
-		n_mom = 0  # MoMモードのサンプル数
+		B, time_start, nloss = 1, time.time(), 0
 		self.train()
 		scaler = GradScaler()
 		self.scheduler.step(args.epoch - 1)
@@ -69,13 +57,7 @@ class trainer(nn.Module):
 				if audio2.dim() == 1:
 					audio2 = audio2.unsqueeze(0)
 
-				# モードをランダムに切り替え
-				if random.random() < 0.5:
-					mode = "single"  # Single: session1のmixture + session2のlip_cropで、session2の出力を0に近づける
-					mixture_plus = audio1  # Singleモードではaudio1のみ
-				else:
-					mode = "mom"  # MoM: 通常のMixIT
-					mixture_plus = audio1 + audio2  # MoMモードではaudio1 + audio2
+				mixture_plus = audio1 + audio2  # [1, T]
 
 				mixture1_outputs = []
 				for lip in mixture1_lip_crops:
@@ -116,64 +98,24 @@ class trainer(nn.Module):
 				for out in mixture2_outputs:
 					estim2 = out if estim2 is None else estim2 + out
 
-				# 損失計算
-				loss1 = self.loss_se.forward(estim1, audio1)  # SI-SNR損失（常に使用）
-				
-				if mode == "single":
-					# Singleモード: 各mixture2_outputsの各outに対してL2損失を計算し、outの数で割る
-					loss2_sum = 0.0
-					for out in mixture2_outputs:
-						loss2_sum += torch.mean(out ** 2)  # 各outに対してL2損失
-					loss2 = loss2_sum / len(mixture2_outputs)  # outの数で割る
-					loss = loss1 + loss2
-					nloss_single += loss.detach().cpu().numpy()
-					nloss_single_sisnr += loss1.detach().cpu().numpy()
-					nloss_single_l2 += loss2.detach().cpu().numpy()
-					n_single += 1
-				else:  # mode == "mom"
-					# MoMモード: 通常のSI-SNR損失
-					loss2 = self.loss_se.forward(estim2, audio2)
-					loss = (loss1 + loss2) / 2
-					nloss_mom += loss.detach().cpu().numpy()
-					nloss_mom_sisnr1 += loss1.detach().cpu().numpy()
-					nloss_mom_sisnr2 += loss2.detach().cpu().numpy()
-					n_mom += 1
-
-				nloss += loss.detach().cpu().numpy()
+				loss1 = self.loss_se.forward(estim1, audio1)
+				loss2 = self.loss_se.forward(estim2, audio2)
+				loss = (loss1 + loss2) / 2
 
 			scaler.scale(loss).backward()
-			# スケールを解除してから勾配クリッピングを行う
-			scaler.unscale_(self.optim)
 			torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
 			scaler.step(self.optim)
 			scaler.update()
 
+			nloss += loss.detach().cpu().numpy()
 			time_used = time.time() - time_start
-			# ログ出力（各モードの損失と全体の損失を表示）
-			if n_single > 0:
-				single_loss_str = f"Single (SI-SNR: {nloss_single_sisnr/n_single:.3f}, L2: {nloss_single_l2/n_single:.3f})"
-			else:
-				single_loss_str = "Single: N/A"
-			if n_mom > 0:
-				mom_loss_str = f"MoM (SI-SNR1: {nloss_mom_sisnr1/n_mom:.3f}, SI-SNR2: {nloss_mom_sisnr2/n_mom:.3f})"
-			else:
-				mom_loss_str = "MoM: N/A"
-			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (%s, %s)\r"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, single_loss_str, mom_loss_str))
+			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f\r"%\
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num))
 			sys.stderr.flush()
 		sys.stdout.write("\n")
 
-		# 最終ログ出力
-		if n_single > 0:
-			single_loss_str = f"Single (SI-SNR: {nloss_single_sisnr/n_single:.3f}, L2: {nloss_single_l2/n_single:.3f})"
-		else:
-			single_loss_str = "Single: N/A"
-		if n_mom > 0:
-			mom_loss_str = f"MoM (SI-SNR1: {nloss_mom_sisnr1/n_mom:.3f}, SI-SNR2: {nloss_mom_sisnr2/n_mom:.3f})"
-		else:
-			mom_loss_str = "MoM: N/A"
-		args.score_file.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (%s, %s)\n"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, single_loss_str, mom_loss_str))
+		args.score_file.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f\r"%\
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num))
 		args.score_file.flush()
 		return
 

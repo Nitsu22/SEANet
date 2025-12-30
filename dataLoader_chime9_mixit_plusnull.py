@@ -112,59 +112,52 @@ class train_loader(object):
 		base_path1 = '/'.join(audio_path1.split('/')[:audio_path1.split('/').index(session1) + 1])
 		base_path2 = '/'.join(audio_path2.split('/')[:audio_path2.split('/').index(session2) + 1])
 		
-	# Collect all lip crop file lengths for session1
-	all_lip_crop_lengths1 = [face1_len_sec]
-	for spk_id in spk_ids1:
-		lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}_lip.av.npy')
-		if os.path.isfile(lip_path):
-			all_lip_crop_lengths1.append(len(load_visual_all(lip_path)) / 25.0)
-	
-	all_length1 = max(self.length, min(min(all_lip_crop_lengths1), 28.0))
-	
-	# Collect all lip crop file lengths for session2
-	all_lip_crop_lengths2 = [face2_len_sec]
-	for spk_id in spk_ids2:
-		lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}_lip.av.npy')
-		if os.path.isfile(lip_path):
-			all_lip_crop_lengths2.append(len(load_visual_all(lip_path)) / 25.0)
-	
-	all_length2 = max(self.length, min(min(all_lip_crop_lengths2), 28.0))
-	
-	# Use independent random timestamps for each session
-	start_timestamp1 = int(random.random() * (all_length1 - self.length)) + 1
-	start_timestamp2 = int(random.random() * (all_length2 - self.length)) + 1
-	start_face1 = int(start_timestamp1 * 25)
-	start_face2 = int(start_timestamp2 * 25)
-	start_audio1 = start_face1 * 640
-	start_audio2 = start_face2 * 640
+		# Collect all lip crop file lengths to ensure all speakers fit
+		all_lip_crop_lengths = [face1_len_sec, face2_len_sec]
+		for spk_id in spk_ids1:
+			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}_lip.av.npy')
+			if os.path.isfile(lip_path):
+				all_lip_crop_lengths.append(len(load_visual_all(lip_path)) / 25.0)
+		for spk_id in spk_ids2:
+			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}_lip.av.npy')
+			if os.path.isfile(lip_path):
+				all_lip_crop_lengths.append(len(load_visual_all(lip_path)) / 25.0)
 		
-	# Load mixture1 and mixture2
-	audio1 = load_audio_all(path = audio_path1)
-	audio2 = load_audio_all(path = audio_path2)
-	audio1_len = len(audio1)
-	audio2_len = len(audio2)
-	required_audio_len = int(self.length * 16000)
-	
-	# Range check and segment extraction for mixture1
-	if start_audio1 >= audio1_len:
-		start_audio1 = max(0, audio1_len - required_audio_len)
-		start_face1 = int(start_audio1 / 640)
-	
-	audio1_segment = audio1[start_audio1:start_audio1 + required_audio_len]
-	if len(audio1_segment) < required_audio_len:
-		audio1_segment = numpy.concatenate([audio1_segment, numpy.zeros(required_audio_len - len(audio1_segment), dtype=audio1_segment.dtype)])
-	
-	# Range check and segment extraction for mixture2
-	if start_audio2 >= audio2_len:
-		start_audio2 = max(0, audio2_len - required_audio_len)
-		start_face2 = int(start_audio2 / 640)
-	
-	audio2_segment = audio2[start_audio2:start_audio2 + required_audio_len]
-	if len(audio2_segment) < required_audio_len:
-		audio2_segment = numpy.concatenate([audio2_segment, numpy.zeros(required_audio_len - len(audio2_segment), dtype=audio2_segment.dtype)])
-	
-	if len(audio1_segment) == 0 or len(audio2_segment) == 0:
-		raise ValueError(f"Empty audio segment: {audio_path1 if len(audio1_segment) == 0 else audio_path2}")
+		all_length = max(self.length, min(min(all_lip_crop_lengths), 28.0))
+		
+		# Use same timestamp for both mixtures
+		start_timestamp = int(random.random() * (all_length - self.length)) + 1
+		start_face1 = start_face2 = int(start_timestamp * 25)
+		start_audio1 = start_face1 * 640
+		start_audio2 = start_face2 * 640
+		
+		# Load mixture1 and mixture2
+		audio1 = load_audio_all(path = audio_path1)
+		audio2 = load_audio_all(path = audio_path2)
+		audio1_len = len(audio1)
+		audio2_len = len(audio2)
+		required_audio_len = int(self.length * 16000)
+		
+		# Range check and segment extraction for mixture1
+		if start_audio1 >= audio1_len:
+			start_audio1 = max(0, audio1_len - required_audio_len)
+			start_face1 = int(start_audio1 / 640)
+		
+		audio1_segment = audio1[start_audio1:start_audio1 + required_audio_len]
+		if len(audio1_segment) < required_audio_len:
+			audio1_segment = numpy.concatenate([audio1_segment, numpy.zeros(required_audio_len - len(audio1_segment), dtype=audio1_segment.dtype)])
+		
+		# Range check and segment extraction for mixture2
+		if start_audio2 >= audio2_len:
+			start_audio2 = max(0, audio2_len - required_audio_len)
+			start_face2 = int(start_audio2 / 640)
+		
+		audio2_segment = audio2[start_audio2:start_audio2 + required_audio_len]
+		if len(audio2_segment) < required_audio_len:
+			audio2_segment = numpy.concatenate([audio2_segment, numpy.zeros(required_audio_len - len(audio2_segment), dtype=audio2_segment.dtype)])
+		
+		if len(audio1_segment) == 0 or len(audio2_segment) == 0:
+			raise ValueError(f"Empty audio segment: {audio_path1 if len(audio1_segment) == 0 else audio_path2}")
 		
 		# Normalize audio
 		audio1_max = numpy.max(numpy.abs(audio1_segment))
