@@ -46,7 +46,7 @@ class trainer(nn.Module):
 		scaler = GradScaler()
 		self.scheduler.step(args.epoch - 1)
 		lr = self.optim.param_groups[0]['lr']	
-		for num, (audio1, mixture1_lip_crops, audio2, mixture2_lip_crops) in enumerate(args.trainLoader, start = 1):
+		for num, (audio1, mixture1_lip_crops, audio2, mixture2_lip_crops, mixture3_lip_crops) in enumerate(args.trainLoader, start = 1):
 			self.zero_grad()
 			with autocast():				
 				# Ensure batch dimension
@@ -100,7 +100,33 @@ class trainer(nn.Module):
 
 				loss1 = self.loss_se.forward(estim1, audio1)
 				loss2 = self.loss_se.forward(estim2, audio2)
-				loss = (loss1 + loss2) / 2
+				
+				# Calculate loss3 for mixture3_lip_crops
+				mixture3_losses = []
+				for lip in mixture3_lip_crops:
+					lip = lip.cuda()
+					if lip.dim() == 2:
+						lip = lip.unsqueeze(0)  # [1, F, C]
+					
+					# サイズチェック（フレーム数が0の場合はスキップ）
+					if lip.shape[1] == 0:
+						print(f'WARNING: Empty lip crop detected in mixture3, shape={lip.shape}, skipping...')
+						continue
+					
+					out_speech, _ = self.model(mixture_plus, lip, M = B)
+					out_speech = out_speech[-B:,:]  # [1, T]
+					
+					# L2 loss with zero vector (mean squared error)
+					l2_loss = torch.mean(out_speech ** 2)
+					mixture3_losses.append(l2_loss)
+				
+				if len(mixture3_losses) == 0:
+					loss3 = torch.tensor(0.0, device=audio1.device)
+				else:
+					# Average of L2 losses
+					loss3 = sum(mixture3_losses) / len(mixture3_losses)
+				
+				loss = (loss1 + loss2) / 2 + loss3
 
 			scaler.scale(loss).backward()
 			torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
