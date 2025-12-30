@@ -41,7 +41,7 @@ class trainer(nn.Module):
 		
 	def train_network(self, args):
 		# MixIT: batchサイズ1前提で各話者出力を合計
-		B, time_start, nloss = 1, time.time(), 0
+		B, time_start, nloss, nloss1, nloss2, nloss3 = 1, time.time(), 0, 0, 0, 0
 		self.train()
 		scaler = GradScaler()
 		self.scheduler.step(args.epoch - 1)
@@ -134,14 +134,17 @@ class trainer(nn.Module):
 			scaler.update()
 
 			nloss += loss.detach().cpu().numpy()
+			nloss1 += loss1.detach().cpu().numpy()
+			nloss2 += loss2.detach().cpu().numpy()
+			nloss3 += loss3.detach().cpu().numpy()
 			time_used = time.time() - time_start
-			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f\r"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num))
+			sys.stderr.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (L1: %.3f, L2: %.3f, L3: %.3f)\r"%\
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss1/num, nloss2/num, nloss3/num))
 			sys.stderr.flush()
 		sys.stdout.write("\n")
 
-		args.score_file.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f\r"%\
-			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num))
+		args.score_file.write("Train: [%2d] %.2f%% (est %.1f mins) Lr: %6f, Loss: %.3f (L1: %.3f, L2: %.3f, L3: %.3f)\r"%\
+			(args.epoch, 100 * (num / args.trainLoader.__len__()), time_used * args.trainLoader.__len__() / num / 60, lr, nloss/num, nloss1/num, nloss2/num, nloss3/num))
 		args.score_file.flush()
 		return
 
