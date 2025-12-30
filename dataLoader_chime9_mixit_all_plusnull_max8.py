@@ -56,22 +56,42 @@ class train_loader(object):
 				path1 = random.choice(session1_paths)
 				path2 = random.choice(session2_paths)
 				
-				# Select random session3 (different from session1 and session2)
-				available_sessions = [s for s in session_list if s != session1 and s != session2]
-				if len(available_sessions) > 0:
-					session3 = random.choice(available_sessions)
-					# Get track_00_lip.av.wav paths from session3
-					session3_paths = [p for p in self.session_dict[session3] if 'track_00_lip.av.wav' in p]
-					if len(session3_paths) > 0:
-						# Randomly select one path from session3
-						path3 = random.choice(session3_paths)
-						self.pair_list.append((path1, path2, path3))
+				# Extract session IDs and metadata paths
+				parts1 = path1.split('/')
+				parts2 = path2.split('/')
+				session_idx1 = next((i for i, p in enumerate(parts1) if p.startswith('session_')), None)
+				session_idx2 = next((i for i, p in enumerate(parts2) if p.startswith('session_')), None)
+				
+				if session_idx1 is None or session_idx2 is None:
+					continue
+				
+				metadata_path1 = '/'.join(parts1[:session_idx1 + 1]) + '/metadata.json'
+				metadata_path2 = '/'.join(parts2[:session_idx2 + 1]) + '/metadata.json'
+				
+				# Load metadata to count speakers
+				try:
+					with open(metadata_path1, 'r') as file:
+						metadata_dict1 = json.load(file)
+					with open(metadata_path2, 'r') as file:
+						metadata_dict2 = json.load(file)
+					
+					# Get all speakers from each session
+					spk_ids1 = [spk_id for spk_id in metadata_dict1.keys() if spk_id.startswith('spk_')]
+					spk_ids2 = [spk_id for spk_id in metadata_dict2.keys() if spk_id.startswith('spk_')]
+					
+					# Check if total speaker count is <= 8
+					total_speakers = len(spk_ids1) + len(spk_ids2)
+					if total_speakers <= 8:
+						self.pair_list.append((path1, path2))
+				except (FileNotFoundError, json.JSONDecodeError):
+					# Skip if metadata file is missing or invalid
+					continue
 		
-		print(f"Created {len(self.pair_list)} pairs from {len(session_list)} sessions (all combinations)")
+		print(f"Created {len(self.pair_list)} pairs from {len(session_list)} sessions (all combinations, filtered to <=8 speakers per pair)")
 
 	def __getitem__(self, index):         
-		# Get pair of paths (including session3)
-		audio_path1, audio_path2, audio_path3 = self.pair_list[index]
+		# Get pair of paths
+		audio_path1, audio_path2 = self.pair_list[index]
 		
 		# Extract session IDs and metadata paths
 		parts1 = audio_path1.split('/')
@@ -115,29 +135,21 @@ class train_loader(object):
 		base_path1 = '/'.join(audio_path1.split('/')[:audio_path1.split('/').index(session1) + 1])
 		base_path2 = '/'.join(audio_path2.split('/')[:audio_path2.split('/').index(session2) + 1])
 		
-		# Collect all lip crop file lengths for session1 (store face data to avoid duplicate loading)
+		# Collect all lip crop file lengths for session1
 		all_lip_crop_lengths1 = [face1_len_sec]
-		spk_face_data1 = {}  # Store face data to avoid duplicate loading
 		for spk_id in spk_ids1:
 			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}_lip.av.npy')
 			if os.path.isfile(lip_path):
-				face = load_visual_all(lip_path)
-				face_len_sec = len(face) / 25.0
-				all_lip_crop_lengths1.append(face_len_sec)
-				spk_face_data1[spk_id] = face
+				all_lip_crop_lengths1.append(len(load_visual_all(lip_path)) / 25.0)
 		
 		all_length1 = max(self.length, min(min(all_lip_crop_lengths1), 28.0))
 		
-		# Collect all lip crop file lengths for session2 (store face data to avoid duplicate loading)
+		# Collect all lip crop file lengths for session2
 		all_lip_crop_lengths2 = [face2_len_sec]
-		spk_face_data2 = {}  # Store face data to avoid duplicate loading
 		for spk_id in spk_ids2:
 			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}_lip.av.npy')
 			if os.path.isfile(lip_path):
-				face = load_visual_all(lip_path)
-				face_len_sec = len(face) / 25.0
-				all_lip_crop_lengths2.append(face_len_sec)
-				spk_face_data2[spk_id] = face
+				all_lip_crop_lengths2.append(len(load_visual_all(lip_path)) / 25.0)
 		
 		all_length2 = max(self.length, min(min(all_lip_crop_lengths2), 28.0))
 		
@@ -185,14 +197,15 @@ class train_loader(object):
 		if audio2_max > 0:
 			audio2_segment = numpy.divide(audio2_segment, audio2_max)
 		
-		# Get lip crops for all speakers (use cached face data)
+		# Get lip crops for all speakers
 		required_face_len = int(self.length * 25)
 		mixture1_lip_crops = []
 		for spk_id in spk_ids1:
-			if spk_id not in spk_face_data1:
+			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}_lip.av.npy')
+			if not os.path.isfile(lip_path):
 				continue
 			
-			face = spk_face_data1[spk_id]
+			face = load_visual_all(lip_path)
 			face_len = len(face)
 			if start_face1 >= face_len:
 				continue
@@ -208,10 +221,11 @@ class train_loader(object):
 		
 		mixture2_lip_crops = []
 		for spk_id in spk_ids2:
-			if spk_id not in spk_face_data2:
+			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}_lip.av.npy')
+			if not os.path.isfile(lip_path):
 				continue
 			
-			face = spk_face_data2[spk_id]
+			face = load_visual_all(lip_path)
 			face_len = len(face)
 			if start_face2 >= face_len:
 				continue
@@ -225,13 +239,28 @@ class train_loader(object):
 			
 			mixture2_lip_crops.append(torch.FloatTensor(face_segment))
 		
-		# Extract session3 metadata path (audio_path3 is already determined in __init__)
+		# Select random session3 (different from session1 and session2)
+		session_list = list(self.session_dict.keys())
+		available_sessions = [s for s in session_list if s != session1 and s != session2]
+		if len(available_sessions) == 0:
+			raise ValueError(f"No available sessions for session3 (session1={session1}, session2={session2})")
+		
+		session3 = random.choice(available_sessions)
+		
+		# Get track_00_lip.av.wav paths from session3
+		session3_paths = [p for p in self.session_dict[session3] if 'track_00_lip.av.wav' in p]
+		if len(session3_paths) == 0:
+			raise ValueError(f"No track_00_lip.av.wav paths found in session3: {session3}")
+		
+		# Randomly select one path from session3
+		audio_path3 = random.choice(session3_paths)
+		
+		# Extract session3 metadata path
 		parts3 = audio_path3.split('/')
 		session_idx3 = next((i for i, p in enumerate(parts3) if p.startswith('session_')), None)
 		if session_idx3 is None:
 			raise ValueError(f"Could not find session in path: {audio_path3}")
 		
-		session3 = parts3[session_idx3]
 		metadata_path3 = '/'.join(parts3[:session_idx3 + 1]) + '/metadata.json'
 		
 		with open(metadata_path3, 'r') as file:
@@ -251,16 +280,12 @@ class train_loader(object):
 		# Get base path for session3 speaker lip crops
 		base_path3 = '/'.join(parts3[:parts3.index(session3) + 1])
 		
-		# Collect all lip crop file lengths for session3 (store face data to avoid duplicate loading)
+		# Collect all lip crop file lengths for session3
 		all_lip_crop_lengths3 = [face3_len_sec]
-		spk_face_data3 = {}  # Store face data to avoid duplicate loading
 		for spk_id in spk_ids3:
 			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}_lip.av.npy')
 			if os.path.isfile(lip_path):
-				face = load_visual_all(lip_path)
-				face_len_sec = len(face) / 25.0
-				all_lip_crop_lengths3.append(face_len_sec)
-				spk_face_data3[spk_id] = face
+				all_lip_crop_lengths3.append(len(load_visual_all(lip_path)) / 25.0)
 		
 		all_length3 = max(self.length, min(min(all_lip_crop_lengths3), 28.0))
 		
@@ -268,13 +293,14 @@ class train_loader(object):
 		start_timestamp3 = int(random.random() * (all_length3 - self.length)) + 1
 		start_face3 = int(start_timestamp3 * 25)
 		
-		# Get lip crops for all speakers in session3 (use cached face data)
+		# Get lip crops for all speakers in session3
 		mixture3_lip_crops = []
 		for spk_id in spk_ids3:
-			if spk_id not in spk_face_data3:
+			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}_lip.av.npy')
+			if not os.path.isfile(lip_path):
 				continue
 			
-			face = spk_face_data3[spk_id]
+			face = load_visual_all(lip_path)
 			face_len = len(face)
 			if start_face3 >= face_len:
 				continue
