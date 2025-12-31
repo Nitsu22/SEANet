@@ -16,4 +16,4 @@ CUDA_VISIBLE_DEVICES=6 python ../main_chime9_mixit_half_all_plusnull_max8-2.py \
 --alpha 1.0 \
 --val_step 3 \
 --lr_decay 0.97 \
---init_model /net/midgar/work/nitsu/work/chime9/SEANet/exps/seanet/model/model_0147.model
+# --init_model /net/midgar/work/nitsu/work/chime9/SEANet/exps/seanet/model/model_0147.model
