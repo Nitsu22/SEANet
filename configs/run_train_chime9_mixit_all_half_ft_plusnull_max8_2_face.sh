@@ -6,7 +6,7 @@ printf "seanet-CHIME9-MixIT-training (all session pairs with plusnull, max8 spea
 # Use CUDA_VISIBLE_DEVICES from environment if set, otherwise default to 0
 CUDA_VISIBLE_DEVICES=0 python ../main_chime9_mixit_half_all_plusnull_max8-2_face.py \
 --save_path exps/seanet_chime9_mixit_all_half_ft_plusnull_max8_2_face \
---data_list /net/midgar/work/nitsu/work/chime9/data/datalist_train \
+--data_list /net/midgar/work/nitsu/work/chime9/SEANet/data/datalist_train \
 --backbone seanet \
 --n_cpu 4 \
 --length 4 \
