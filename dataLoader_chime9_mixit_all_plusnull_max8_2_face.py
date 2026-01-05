@@ -47,9 +47,9 @@ class train_loader(object):
 		session_list = list(self.session_dict.keys())
 		self.pair_list = []
 		for session1, session2 in itertools.combinations(session_list, 2):
-			# Get track_00.wav paths from each session
-			session1_paths = [p for p in self.session_dict[session1] if 'track_00.wav' in p]
-			session2_paths = [p for p in self.session_dict[session2] if 'track_00.wav' in p]
+			# Get track_00_lip.av.wav paths from each session
+			session1_paths = [p for p in self.session_dict[session1] if 'track_00_lip.av.wav' in p]
+			session2_paths = [p for p in self.session_dict[session2] if 'track_00_lip.av.wav' in p]
 			
 			if len(session1_paths) > 0 and len(session2_paths) > 0:
 				# Randomly select one path from each session
@@ -247,10 +247,10 @@ class train_loader(object):
 		
 		session3 = random.choice(available_sessions)
 		
-		# Get track_00.wav paths from session3
-		session3_paths = [p for p in self.session_dict[session3] if 'track_00.wav' in p]
+		# Get track_00_lip.av.wav paths from session3
+		session3_paths = [p for p in self.session_dict[session3] if 'track_00_lip.av.wav' in p]
 		if len(session3_paths) == 0:
-			raise ValueError(f"No track_00.wav paths found in session3: {session3}")
+			raise ValueError(f"No track_00_lip.av.wav paths found in session3: {session3}")
 		
 		# Randomly select one path from session3
 		audio_path3 = random.choice(session3_paths)
