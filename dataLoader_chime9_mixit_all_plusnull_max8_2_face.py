@@ -47,9 +47,9 @@ class train_loader(object):
 		session_list = list(self.session_dict.keys())
 		self.pair_list = []
 		for session1, session2 in itertools.combinations(session_list, 2):
-			# Get track_00_lip.av.wav paths from each session
-			session1_paths = [p for p in self.session_dict[session1] if 'track_00_lip.av.wav' in p]
-			session2_paths = [p for p in self.session_dict[session2] if 'track_00_lip.av.wav' in p]
+			# Get track_00.wav paths from each session
+			session1_paths = [p for p in self.session_dict[session1] if 'track_00.wav' in p]
+			session2_paths = [p for p in self.session_dict[session2] if 'track_00.wav' in p]
 			
 			if len(session1_paths) > 0 and len(session2_paths) > 0:
 				# Randomly select one path from each session
@@ -138,7 +138,7 @@ class train_loader(object):
 		# Collect all lip crop file lengths for session1
 		all_lip_crop_lengths1 = [face1_len_sec]
 		for spk_id in spk_ids1:
-			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}_lip.av.npy')
+			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}.npy')
 			if os.path.isfile(lip_path):
 				all_lip_crop_lengths1.append(len(load_visual_all(lip_path)) / 25.0)
 		
@@ -147,7 +147,7 @@ class train_loader(object):
 		# Collect all lip crop file lengths for session2
 		all_lip_crop_lengths2 = [face2_len_sec]
 		for spk_id in spk_ids2:
-			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}_lip.av.npy')
+			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}.npy')
 			if os.path.isfile(lip_path):
 				all_lip_crop_lengths2.append(len(load_visual_all(lip_path)) / 25.0)
 		
@@ -201,7 +201,7 @@ class train_loader(object):
 		required_face_len = int(self.length * 25)
 		mixture1_lip_crops = []
 		for spk_id in spk_ids1:
-			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}_lip.av.npy')
+			lip_path = os.path.join(base_path1, 'speakers', spk_id, 'central_crops', f'{track1}.npy')
 			if not os.path.isfile(lip_path):
 				continue
 			
@@ -221,7 +221,7 @@ class train_loader(object):
 		
 		mixture2_lip_crops = []
 		for spk_id in spk_ids2:
-			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}_lip.av.npy')
+			lip_path = os.path.join(base_path2, 'speakers', spk_id, 'central_crops', f'{track2}.npy')
 			if not os.path.isfile(lip_path):
 				continue
 			
@@ -247,10 +247,10 @@ class train_loader(object):
 		
 		session3 = random.choice(available_sessions)
 		
-		# Get track_00_lip.av.wav paths from session3
-		session3_paths = [p for p in self.session_dict[session3] if 'track_00_lip.av.wav' in p]
+		# Get track_00.wav paths from session3
+		session3_paths = [p for p in self.session_dict[session3] if 'track_00.wav' in p]
 		if len(session3_paths) == 0:
-			raise ValueError(f"No track_00_lip.av.wav paths found in session3: {session3}")
+			raise ValueError(f"No track_00.wav paths found in session3: {session3}")
 		
 		# Randomly select one path from session3
 		audio_path3 = random.choice(session3_paths)
@@ -283,7 +283,7 @@ class train_loader(object):
 		# Collect all lip crop file lengths for session3
 		all_lip_crop_lengths3 = [face3_len_sec]
 		for spk_id in spk_ids3:
-			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}_lip.av.npy')
+			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}.npy')
 			if os.path.isfile(lip_path):
 				all_lip_crop_lengths3.append(len(load_visual_all(lip_path)) / 25.0)
 		
@@ -297,7 +297,7 @@ class train_loader(object):
 		# First, filter speakers with existing lip crop files
 		available_spk_ids3 = []
 		for spk_id in spk_ids3:
-			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}_lip.av.npy')
+			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}.npy')
 			if os.path.isfile(lip_path):
 				available_spk_ids3.append(spk_id)
 		
@@ -310,7 +310,7 @@ class train_loader(object):
 		# Get lip crops for selected speakers
 		mixture3_lip_crops = []
 		for spk_id in selected_spk_ids3:
-			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}_lip.av.npy')
+			lip_path = os.path.join(base_path3, 'speakers', spk_id, 'central_crops', f'{track3}.npy')
 			if not os.path.isfile(lip_path):
 				continue
 			
